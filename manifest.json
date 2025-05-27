@@ -1,0 +1,68 @@
+{
+    "manifest_version": 3,
+    "name": "SnapZone",
+    "version": "1.0",
+    "description": "Highlight areas and collect them into one screenshot.",
+    "permissions": [
+        "tabs",
+        "activeTab",
+        "scripting",
+        "commands",
+        "contextMenus"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "commands": {
+        "start-snapzone": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+S",
+                "mac": "Command+Shift+S"
+            },
+            "description": "Start creating a screenshot"
+        },
+        "capture-snapzone": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+X",
+                "mac": "Command+Shift+X"
+            },
+            "description": "Take a screenshot of the selected area"
+        },
+        "save-snapzone": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+Z",
+                "mac": "Command+Shift+Z"
+            },
+            "description": "Save the current screenshot"
+        }
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "css": [
+                "content.css"
+            ]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "content.css"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}

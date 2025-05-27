@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <button id="activate" class="button">
+            Select Area
+            <span class="shortcut" id="start-shortcut"></span>
+        </button>
+        <button id="capture" class="button">
+            Take Screenshot
+            <span class="shortcut" id="capture-shortcut"></span>
+        </button>
+        
+        <div class="shortcuts-section">
+            <div class="shortcuts-title">Keyboard Shortcuts</div>
+            <div class="shortcut-grid">
+                <div class="shortcut-item">
+                    <span>Start selection</span>
+                    <span class="shortcut-keys" id="start-keys"></span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Take screenshot</span>
+                    <span class="shortcut-keys" id="capture-keys"></span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Save screenshot</span>
+                    <span class="shortcut-keys" id="save-keys"></span>
+                </div>
+                <div class="divider"></div>
+                <div class="shortcut-item">
+                    <span>Cancel selection</span>
+                    <span class="shortcut-keys">ESC</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Delete selected zone</span>
+                    <span class="shortcut-keys">Delete</span>
+                </div>
+            </div>
+            <div class="note">Also available through the page context menu (right-click)</div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
