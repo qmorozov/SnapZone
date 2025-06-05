@@ -74,6 +74,13 @@
   pointer-events: none;
 }
 
+.snapzone-scroll-overlay {
+  position: fixed;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 999998;
+}
+
 #snapzone-notification {
   position: fixed;
   bottom: 20px;

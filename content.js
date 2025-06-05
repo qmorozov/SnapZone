@@ -33,6 +33,7 @@ let handlers = {
 };
 
 const scrollContainers = new Set();
+const containerOverlays = new Map();
 let hiddenStickyElements = [];
 
 function registerScrollContainer(container) {
@@ -47,16 +48,47 @@ function unregisterScrollContainers() {
     scrollContainers.clear();
 }
 
+function getOverlayForContainer(container) {
+    if (container === window) return document.body;
+    if (!containerOverlays.has(container)) {
+        const rect = container.getBoundingClientRect();
+        const overlay = document.createElement('div');
+        overlay.className = 'snapzone-scroll-overlay';
+        overlay.style.left = rect.left + 'px';
+        overlay.style.top = rect.top + 'px';
+        overlay.style.width = rect.width + 'px';
+        overlay.style.height = rect.height + 'px';
+        document.body.appendChild(overlay);
+        containerOverlays.set(container, overlay);
+    }
+    return containerOverlays.get(container);
+}
+
+function removeContainerOverlays() {
+    containerOverlays.forEach(overlay => overlay.remove());
+    containerOverlays.clear();
+}
+
 function updateZonePositions() {
+    scrollContainers.forEach(container => {
+        if (container !== window && containerOverlays.has(container)) {
+            const rect = container.getBoundingClientRect();
+            const overlay = containerOverlays.get(container);
+            overlay.style.left = rect.left + 'px';
+            overlay.style.top = rect.top + 'px';
+            overlay.style.width = rect.width + 'px';
+            overlay.style.height = rect.height + 'px';
+        }
+    });
+
     snapZones.forEach(zone => {
         const container = zone.scrollContainer || window;
-        const rect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();
         const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
         const scrollTop = container === window ? window.scrollY : container.scrollTop;
-        const left = rect.left + zone.relativeLeft - scrollLeft;
-        const top = rect.top + zone.relativeTop - scrollTop;
-        zone.left = left;
-        zone.top = top;
+        const left = zone.relativeLeft - scrollLeft;
+        const top = zone.relativeTop - scrollTop;
+        zone.left = (container === window ? 0 : container.getBoundingClientRect().left) + left;
+        zone.top = (container === window ? 0 : container.getBoundingClientRect().top) + top;
         if (zone.element) {
             zone.element.style.left = left + 'px';
             zone.element.style.top = top + 'px';
@@ -97,14 +129,20 @@ function getScrollableParent(el) {
 function waitForScrollEnd(node) {
     return new Promise(resolve => {
         let last = node === window ? window.scrollY : node.scrollTop;
+        let stableFrames = 0;
         const check = () => {
             const curr = node === window ? window.scrollY : node.scrollTop;
             if (curr === last) {
-                resolve();
+                stableFrames++;
+                if (stableFrames > 1) {
+                    resolve();
+                    return;
+                }
             } else {
+                stableFrames = 0;
                 last = curr;
-                requestAnimationFrame(check);
             }
+            requestAnimationFrame(check);
         };
         requestAnimationFrame(check);
     });
@@ -116,6 +154,10 @@ function scrollToTarget(node, top) {
     } else {
         node.scrollTo({ top, behavior: 'instant' });
     }
+}
+
+function waitForRender() {
+    return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
 
 function handleMouseMove(e) {
@@ -363,6 +405,9 @@ function handleMouseUp(e) {
             const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
             const scrollTop = container === window ? window.scrollY : container.scrollTop;
 
+            const overlayParent = getOverlayForContainer(container);
+            overlayParent.appendChild(currentRect);
+
             const zone = {
                 id: Date.now(),
                 left: rect.left + window.scrollX,
@@ -496,6 +541,8 @@ function stopSnapZone() {
         overlay = null;
     }
 
+    removeContainerOverlays();
+
     unregisterScrollContainers();
 
     document.removeEventListener('mousedown', handlers.mousedown);
@@ -609,6 +656,14 @@ function deleteZone(zone) {
     const index = snapZones.findIndex(z => z.id === zone.id);
     if (index !== -1) {
         zone.element.remove();
+        if (zone.scrollContainer !== window && containerOverlays.has(zone.scrollContainer)) {
+            const hasOther = snapZones.some(z => z.scrollContainer === zone.scrollContainer && z.id !== zone.id);
+            if (!hasOther) {
+                const overlay = containerOverlays.get(zone.scrollContainer);
+                overlay.remove();
+                containerOverlays.delete(zone.scrollContainer);
+            }
+        }
         snapZones.splice(index, 1);
         
         if (snapZones.length === 0) {
@@ -761,6 +816,7 @@ async function captureZoneInChunks(zone) {
             scrollToTarget(container, scrollTarget);
 
             await waitForScrollEnd(container);
+            await waitForRender();
 
             const containerRect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();
             const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
