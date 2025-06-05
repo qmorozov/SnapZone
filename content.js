@@ -32,8 +32,138 @@ let handlers = {
     keydown: null
 };
 
+const scrollContainers = new Set();
+const containerOverlays = new Map();
+let hiddenStickyElements = [];
+
+function registerScrollContainer(container) {
+    if (!scrollContainers.has(container)) {
+        container.addEventListener('scroll', updateZonePositions, { passive: true });
+        scrollContainers.add(container);
+    }
+}
+
+function unregisterScrollContainers() {
+    scrollContainers.forEach(c => c.removeEventListener('scroll', updateZonePositions));
+    scrollContainers.clear();
+}
+
+function getOverlayForContainer(container) {
+    if (container === window) return document.body;
+    if (!containerOverlays.has(container)) {
+        const rect = container.getBoundingClientRect();
+        const overlay = document.createElement('div');
+        overlay.className = 'snapzone-scroll-overlay';
+        overlay.style.left = rect.left + 'px';
+        overlay.style.top = rect.top + 'px';
+        overlay.style.width = rect.width + 'px';
+        overlay.style.height = rect.height + 'px';
+        document.body.appendChild(overlay);
+        containerOverlays.set(container, overlay);
+    }
+    return containerOverlays.get(container);
+}
+
+function removeContainerOverlays() {
+    containerOverlays.forEach(overlay => overlay.remove());
+    containerOverlays.clear();
+}
+
+function updateZonePositions() {
+    scrollContainers.forEach(container => {
+        if (container !== window && containerOverlays.has(container)) {
+            const rect = container.getBoundingClientRect();
+            const overlay = containerOverlays.get(container);
+            overlay.style.left = rect.left + 'px';
+            overlay.style.top = rect.top + 'px';
+            overlay.style.width = rect.width + 'px';
+            overlay.style.height = rect.height + 'px';
+        }
+    });
+
+    snapZones.forEach(zone => {
+        const container = zone.scrollContainer || window;
+        const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
+        const scrollTop = container === window ? window.scrollY : container.scrollTop;
+        const left = zone.relativeLeft - scrollLeft;
+        const top = zone.relativeTop - scrollTop;
+        zone.left = (container === window ? 0 : container.getBoundingClientRect().left) + left;
+        zone.top = (container === window ? 0 : container.getBoundingClientRect().top) + top;
+        if (zone.element) {
+            zone.element.style.left = left + 'px';
+            zone.element.style.top = top + 'px';
+        }
+    });
+}
+
+function hideStickyElements() {
+    hiddenStickyElements = [];
+    document.querySelectorAll('*').forEach(el => {
+        if (el.id === 'snapzone-overlay' || el.classList.contains('snapzone-preview-container')) return;
+        const style = getComputedStyle(el);
+        if ((style.position === 'fixed' || style.position === 'sticky') && parseInt(style.top || '0') < 100) {
+            hiddenStickyElements.push({ el, prev: el.style.visibility });
+            el.style.visibility = 'hidden';
+        }
+    });
+}
+
+function restoreStickyElements() {
+    hiddenStickyElements.forEach(item => {
+        item.el.style.visibility = item.prev;
+    });
+    hiddenStickyElements = [];
+}
+
+function getScrollableParent(el) {
+    while (el && el !== document.body && el !== document.documentElement) {
+        const style = getComputedStyle(el);
+        if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+            return el;
+        }
+        el = el.parentElement;
+    }
+    return null;
+}
+
+function waitForScrollEnd(node) {
+    return new Promise(resolve => {
+        let last = node === window ? window.scrollY : node.scrollTop;
+        let stableFrames = 0;
+        const check = () => {
+            const curr = node === window ? window.scrollY : node.scrollTop;
+            if (curr === last) {
+                stableFrames++;
+                if (stableFrames >= 5) {
+                    resolve();
+                    return;
+                }
+            } else {
+                stableFrames = 0;
+                last = curr;
+            }
+            requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+    });
+}
+
+function scrollToTarget(node, top) {
+    if (node === window) {
+        window.scrollTo({ top, behavior: 'instant' });
+    } else {
+        node.scrollTo({ top, behavior: 'instant' });
+    }
+}
+
+function waitForRender() {
+    return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+}
+
 function handleMouseMove(e) {
     if (!isActive) return;
+    e.preventDefault();
+    e.stopPropagation();
 
     const x = e.clientX + window.scrollX;
     const y = e.clientY + window.scrollY;
@@ -60,9 +190,17 @@ function handleMouseMove(e) {
 
         selectedZone.element.style.left = constrained.x + 'px';
         selectedZone.element.style.top = constrained.y + 'px';
-        
+
         selectedZone.left = constrained.x;
         selectedZone.top = constrained.y;
+        if (selectedZone.scrollContainer) {
+            const container = selectedZone.scrollContainer;
+            const rect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();
+            const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
+            const scrollTop = container === window ? window.scrollY : container.scrollTop;
+            selectedZone.relativeLeft = constrained.x - rect.left + scrollLeft;
+            selectedZone.relativeTop = constrained.y - rect.top + scrollTop;
+        }
     } else if (isResizing && selectedZone && resizeCorner) {
         let newLeft = selectedZone.left;
         let newTop = selectedZone.top;
@@ -90,11 +228,19 @@ function handleMouseMove(e) {
         selectedZone.element.style.top = newTop + 'px';
         selectedZone.element.style.width = newWidth + 'px';
         selectedZone.element.style.height = newHeight + 'px';
-        
+
         selectedZone.left = newLeft;
         selectedZone.top = newTop;
         selectedZone.width = newWidth;
         selectedZone.height = newHeight;
+        if (selectedZone.scrollContainer) {
+            const container = selectedZone.scrollContainer;
+            const rect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();
+            const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
+            const scrollTop = container === window ? window.scrollY : container.scrollTop;
+            selectedZone.relativeLeft = newLeft - rect.left + scrollLeft;
+            selectedZone.relativeTop = newTop - rect.top + scrollTop;
+        }
     }
 
         if (!e.target.closest('.snapzone-controls')) {
@@ -199,13 +345,14 @@ function getResizeCorner(zone, x, y) {
 
 function handleMouseDown(e) {
     if (!isActive) return;
-
-    const x = e.clientX + window.scrollX;
-    const y = e.clientY + window.scrollY;
-
     if (e.target.closest('.snapzone-controls')) {
         return;
     }
+    e.preventDefault();
+    e.stopPropagation();
+
+    const x = e.clientX + window.scrollX;
+    const y = e.clientY + window.scrollY;
 
     selectedZone = findZoneAtPoint(x, y);
 
@@ -246,6 +393,8 @@ function handleMouseDown(e) {
 
 function handleMouseUp(e) {
     if (!isActive) return;
+    e.preventDefault();
+    e.stopPropagation();
 
     if (isDrawing && currentRect) {
         const rect = currentRect.getBoundingClientRect();
@@ -253,14 +402,31 @@ function handleMouseUp(e) {
         const height = Math.abs(rect.height);
 
         if (width > minDragDistance && height > minDragDistance) {
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const elementAtCenter = document.elementFromPoint(centerX, centerY);
+            const container = getScrollableParent(elementAtCenter) || window;
+            const containerRect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();
+            const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
+            const scrollTop = container === window ? window.scrollY : container.scrollTop;
+
+            const overlayParent = getOverlayForContainer(container);
+            overlayParent.appendChild(currentRect);
+
             const zone = {
                 id: Date.now(),
                 left: rect.left + window.scrollX,
                 top: rect.top + window.scrollY,
                 width: width,
                 height: height,
-                element: currentRect
+                element: currentRect,
+                scrollContainer: container,
+                relativeLeft: rect.left - containerRect.left + scrollLeft,
+                relativeTop: rect.top - containerRect.top + scrollTop
             };
+
+            registerScrollContainer(container);
+            updateZonePositions();
 
             currentRect.className = 'snapzone-rect-saved';
             snapZones.push(zone);
@@ -334,6 +500,8 @@ window.startSnapZone = function () {
     overlay = createOverlay();
     document.body.appendChild(overlay);
 
+    registerScrollContainer(window);
+
     showNotification('Selection mode active. ESC - exit, Delete - remove zone');
 
     handlers.mousedown = handleMouseDown;
@@ -377,6 +545,10 @@ function stopSnapZone() {
         overlay.remove();
         overlay = null;
     }
+
+    removeContainerOverlays();
+
+    unregisterScrollContainers();
 
     document.removeEventListener('mousedown', handlers.mousedown);
     document.removeEventListener('mousemove', handlers.mousemove);
@@ -489,6 +661,14 @@ function deleteZone(zone) {
     const index = snapZones.findIndex(z => z.id === zone.id);
     if (index !== -1) {
         zone.element.remove();
+        if (zone.scrollContainer !== window && containerOverlays.has(zone.scrollContainer)) {
+            const hasOther = snapZones.some(z => z.scrollContainer === zone.scrollContainer && z.id !== zone.id);
+            if (!hasOther) {
+                const overlay = containerOverlays.get(zone.scrollContainer);
+                overlay.remove();
+                containerOverlays.delete(zone.scrollContainer);
+            }
+        }
         snapZones.splice(index, 1);
         
         if (snapZones.length === 0) {
@@ -609,7 +789,8 @@ async function processCapture(area) {
 }
 
 async function captureZoneInChunks(zone) {
-    const viewportHeight = window.innerHeight;
+    const container = zone.scrollContainer || window;
+    const viewportHeight = container === window ? window.innerHeight : container.clientHeight;
     const maxChunkHeight = Math.min(viewportHeight - 100, 800);
     const totalHeight = zone.height;
     const chunks = [];
@@ -625,28 +806,32 @@ async function captureZoneInChunks(zone) {
         }
     }
 
-    const originalScrollY = window.scrollY;
+    const originalScroll = container === window ? window.scrollY : container.scrollTop;
     let capturedHeight = 0;
 
     try {
         for (let i = 0; i < numChunks; i++) {
             const remainingHeight = totalHeight - capturedHeight;
             const chunkHeight = Math.min(remainingHeight, maxChunkHeight);
-            
-            const scrollTarget = zone.top + capturedHeight;
-            
+
+            const scrollTarget = zone.relativeTop + capturedHeight;
+
             showNotification(`Capturing part ${i + 1} of ${numChunks}...`);
-            
-            window.scrollTo({
-                top: scrollTarget,
-                behavior: 'instant'
-            });
-            
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
+
+            scrollToTarget(container, scrollTarget);
+
+            await waitForScrollEnd(container);
+            await new Promise(r => setTimeout(r, 50));
+            await waitForRender();
+
+            const containerRect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();
+            const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
+            const captureX = Math.round(containerRect.left + zone.relativeLeft - scrollLeft);
+            const captureY = Math.round(containerRect.top);
+
             const dataUrl = await processCapture({
-                x: Math.round(zone.left),
-                y: Math.round(zone.top + capturedHeight - window.scrollY),
+                x: captureX,
+                y: captureY,
                 width: Math.round(zone.width),
                 height: Math.round(chunkHeight)
             });
@@ -663,10 +848,7 @@ async function captureZoneInChunks(zone) {
         
         return await combineChunks(chunks, zone.width, zone.height);
     } finally {
-        window.scrollTo({
-            top: originalScrollY,
-            behavior: 'instant'
-        });
+        scrollToTarget(container, originalScroll);
     }
 }
 
@@ -788,6 +970,9 @@ window.captureSnapZone = async function() {
                 zone.element.style.visibility = 'hidden';
             }
         });
+        if (overlay) overlay.style.visibility = 'hidden';
+        hideStickyElements();
+        updateZonePositions();
 
         await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -818,6 +1003,8 @@ window.captureSnapZone = async function() {
                     zone.element.style.visibility = 'visible';
                 }
             });
+            restoreStickyElements();
+            if (overlay) overlay.style.visibility = 'visible';
             if (previewContainer) {
                 previewContainer.style.visibility = 'visible';
             }
@@ -826,12 +1013,14 @@ window.captureSnapZone = async function() {
         console.error('Error capturing zones:', error);
         showNotification('Error creating screenshot');
         stopSnapZone();
-        
+
         snapZones.forEach(zone => {
             if (zone.element) {
                 zone.element.style.visibility = 'visible';
             }
         });
+        restoreStickyElements();
+        if (overlay) overlay.style.visibility = 'visible';
         if (previewContainer) {
             previewContainer.style.visibility = 'visible';
         }
@@ -887,6 +1076,19 @@ function showPreview(dataUrl) {
         stopSnapZone();
         showNotification('Screenshot saved! To create a new one, use the extension button or right-click menu');
     };
+
+    const copyButton = document.createElement('button');
+    copyButton.className = 'snapzone-preview-button copy';
+    copyButton.textContent = 'Copy';
+    copyButton.onclick = async () => {
+        try {
+            await copyImageToClipboard(dataUrl);
+            showNotification('Copied to clipboard');
+        } catch (err) {
+            console.error('Copy failed:', err);
+            showNotification('Failed to copy');
+        }
+    };
     
     const newCaptureButton = document.createElement('button');
     newCaptureButton.className = 'snapzone-preview-button secondary';
@@ -906,6 +1108,7 @@ function showPreview(dataUrl) {
     };
     
     controls.appendChild(downloadButton);
+    controls.appendChild(copyButton);
     controls.appendChild(newCaptureButton);
     controls.appendChild(cancelButton);
     
@@ -926,6 +1129,12 @@ function downloadImage(dataUrl, filename) {
     link.href = dataUrl;
     link.download = filename;
     link.click();
+}
+
+async function copyImageToClipboard(dataUrl) {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
 }
 
 async function combineCaptures(captures) {
