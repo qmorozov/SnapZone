@@ -134,7 +134,7 @@ function waitForScrollEnd(node) {
             const curr = node === window ? window.scrollY : node.scrollTop;
             if (curr === last) {
                 stableFrames++;
-                if (stableFrames > 1) {
+                if (stableFrames >= 5) {
                     resolve();
                     return;
                 }
@@ -162,6 +162,8 @@ function waitForRender() {
 
 function handleMouseMove(e) {
     if (!isActive) return;
+    e.preventDefault();
+    e.stopPropagation();
 
     const x = e.clientX + window.scrollX;
     const y = e.clientY + window.scrollY;
@@ -343,13 +345,14 @@ function getResizeCorner(zone, x, y) {
 
 function handleMouseDown(e) {
     if (!isActive) return;
-
-    const x = e.clientX + window.scrollX;
-    const y = e.clientY + window.scrollY;
-
     if (e.target.closest('.snapzone-controls')) {
         return;
     }
+    e.preventDefault();
+    e.stopPropagation();
+
+    const x = e.clientX + window.scrollX;
+    const y = e.clientY + window.scrollY;
 
     selectedZone = findZoneAtPoint(x, y);
 
@@ -390,6 +393,8 @@ function handleMouseDown(e) {
 
 function handleMouseUp(e) {
     if (!isActive) return;
+    e.preventDefault();
+    e.stopPropagation();
 
     if (isDrawing && currentRect) {
         const rect = currentRect.getBoundingClientRect();
@@ -816,6 +821,7 @@ async function captureZoneInChunks(zone) {
             scrollToTarget(container, scrollTarget);
 
             await waitForScrollEnd(container);
+            await new Promise(r => setTimeout(r, 50));
             await waitForRender();
 
             const containerRect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();

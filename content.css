@@ -71,7 +71,8 @@
   height: 100%;
   background: transparent;
   z-index: 999998;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: crosshair;
 }
 
 .snapzone-scroll-overlay {
