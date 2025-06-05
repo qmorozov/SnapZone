@@ -8,8 +8,8 @@
 
 .snapzone-rect-drawing {
   position: absolute;
-  border: 2px solid #2196F3;
-  background-color: rgba(33, 150, 243, 0.1);
+  border: 2px solid #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
   box-sizing: border-box;
   pointer-events: none;
   z-index: 999998;
@@ -17,16 +17,16 @@
 
 .snapzone-rect-saved {
   position: absolute;
-  border: 2px solid #28a745;
-  background-color: rgba(40, 167, 69, 0.1);
+  border: 2px solid #6b7280;
+  background-color: rgba(107, 114, 128, 0.1);
   cursor: move;
   z-index: 999999;
   pointer-events: auto !important;
 }
 
 .snapzone-rect-saved:hover {
-  border-color: #1e7e34;
-  background-color: rgba(40, 167, 69, 0.2);
+  border-color: #4b5563;
+  background-color: rgba(107, 114, 128, 0.2);
 }
 
 .snapzone-rect-saved.snapzone-highlighted {
@@ -167,7 +167,15 @@
   grid-column: 1 / -1;
 }
 
+.snapzone-preview-button.copy {
+  background: #757575;
+}
+
 .snapzone-preview-button.secondary:hover {
+  background: #616161;
+}
+
+.snapzone-preview-button.copy:hover {
   background: #616161;
 }
 
