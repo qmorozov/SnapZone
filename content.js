@@ -32,6 +32,57 @@ let handlers = {
     keydown: null
 };
 
+const scrollContainers = new Set();
+let hiddenStickyElements = [];
+
+function registerScrollContainer(container) {
+    if (!scrollContainers.has(container)) {
+        container.addEventListener('scroll', updateZonePositions, { passive: true });
+        scrollContainers.add(container);
+    }
+}
+
+function unregisterScrollContainers() {
+    scrollContainers.forEach(c => c.removeEventListener('scroll', updateZonePositions));
+    scrollContainers.clear();
+}
+
+function updateZonePositions() {
+    snapZones.forEach(zone => {
+        const container = zone.scrollContainer || window;
+        const rect = container === window ? { left: 0, top: 0 } : container.getBoundingClientRect();
+        const scrollLeft = container === window ? window.scrollX : container.scrollLeft;
+        const scrollTop = container === window ? window.scrollY : container.scrollTop;
+        const left = rect.left + zone.relativeLeft - scrollLeft;
+        const top = rect.top + zone.relativeTop - scrollTop;
+        zone.left = left;
+        zone.top = top;
+        if (zone.element) {
+            zone.element.style.left = left + 'px';
+            zone.element.style.top = top + 'px';
+        }
+    });
+}
+
+function hideStickyElements() {
+    hiddenStickyElements = [];
+    document.querySelectorAll('*').forEach(el => {
+        if (el.id === 'snapzone-overlay' || el.classList.contains('snapzone-preview-container')) return;
+        const style = getComputedStyle(el);
+        if ((style.position === 'fixed' || style.position === 'sticky') && parseInt(style.top || '0') < 100) {
+            hiddenStickyElements.push({ el, prev: el.style.visibility });
+            el.style.visibility = 'hidden';
+        }
+    });
+}
+
+function restoreStickyElements() {
+    hiddenStickyElements.forEach(item => {
+        item.el.style.visibility = item.prev;
+    });
+    hiddenStickyElements = [];
+}
+
 function getScrollableParent(el) {
     while (el && el !== document.body && el !== document.documentElement) {
         const style = getComputedStyle(el);
@@ -324,6 +375,9 @@ function handleMouseUp(e) {
                 relativeTop: rect.top - containerRect.top + scrollTop
             };
 
+            registerScrollContainer(container);
+            updateZonePositions();
+
             currentRect.className = 'snapzone-rect-saved';
             snapZones.push(zone);
             
@@ -396,6 +450,8 @@ window.startSnapZone = function () {
     overlay = createOverlay();
     document.body.appendChild(overlay);
 
+    registerScrollContainer(window);
+
     showNotification('Selection mode active. ESC - exit, Delete - remove zone');
 
     handlers.mousedown = handleMouseDown;
@@ -439,6 +495,8 @@ function stopSnapZone() {
         overlay.remove();
         overlay = null;
     }
+
+    unregisterScrollContainers();
 
     document.removeEventListener('mousedown', handlers.mousedown);
     document.removeEventListener('mousemove', handlers.mousemove);
@@ -850,6 +908,9 @@ window.captureSnapZone = async function() {
                 zone.element.style.visibility = 'hidden';
             }
         });
+        if (overlay) overlay.style.visibility = 'hidden';
+        hideStickyElements();
+        updateZonePositions();
 
         await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -880,6 +941,8 @@ window.captureSnapZone = async function() {
                     zone.element.style.visibility = 'visible';
                 }
             });
+            restoreStickyElements();
+            if (overlay) overlay.style.visibility = 'visible';
             if (previewContainer) {
                 previewContainer.style.visibility = 'visible';
             }
@@ -888,12 +951,14 @@ window.captureSnapZone = async function() {
         console.error('Error capturing zones:', error);
         showNotification('Error creating screenshot');
         stopSnapZone();
-        
+
         snapZones.forEach(zone => {
             if (zone.element) {
                 zone.element.style.visibility = 'visible';
             }
         });
+        restoreStickyElements();
+        if (overlay) overlay.style.visibility = 'visible';
         if (previewContainer) {
             previewContainer.style.visibility = 'visible';
         }
